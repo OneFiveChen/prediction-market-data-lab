@@ -1,0 +1,15 @@
+{
+  "symbol": "BTCUSDT",
+  "chainlink": {
+    "feedId": "PUT_BTC_USD_DATA_STREAMS_FEED_ID_HERE",
+    "restUrl": "https://api.dataengine.chain.link",
+    "pollMs": 250
+  },
+  "cex": {
+    "compositeMs": 100,
+    "binance": true,
+    "gateio": true,
+    "bitget": true
+  },
+  "outputDir": "data/chainlink-cex-leadlag"
+}

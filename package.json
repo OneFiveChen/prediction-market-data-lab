@@ -1,0 +1,23 @@
+{
+  "name": "prediction-market-data-lab",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Research tools for Chainlink Data Streams and CEX tick-data lead-lag analysis.",
+  "type": "commonjs",
+  "scripts": {
+    "collect": "node collect-chainlink-cex-leadlag.js chainlink-cex-config.json",
+    "analyze": "node analyze-chainlink-cex-leadlag.js",
+    "check": "node --check collect-chainlink-cex-leadlag.js && node --check analyze-chainlink-cex-leadlag.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "chainlink",
+    "data-streams",
+    "lead-lag",
+    "prediction-markets",
+    "market-data"
+  ],
+  "license": "UNLICENSED"
+}
