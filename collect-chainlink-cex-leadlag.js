@@ -11,6 +11,11 @@ const DEFAULT_CONFIG = {
     restUrl: 'https://api.dataengine.chain.link',
     pollMs: 250,
   },
+  polymarketRtds: {
+    enabled: true,
+    chainlinkSymbol: 'btc/usd',
+    binanceSymbol: 'btcusdt',
+  },
   cex: {
     compositeMs: 100,
     binance: true,
@@ -40,6 +45,7 @@ function loadConfig() {
     ...DEFAULT_CONFIG,
     ...userConfig,
     chainlink: { ...DEFAULT_CONFIG.chainlink, ...(userConfig.chainlink || {}) },
+    polymarketRtds: { ...DEFAULT_CONFIG.polymarketRtds, ...(userConfig.polymarketRtds || {}) },
     cex: { ...DEFAULT_CONFIG.cex, ...(userConfig.cex || {}) },
   };
 }
@@ -191,6 +197,13 @@ async function fetchChainlinkLatest(config) {
   };
 }
 
+function hasDirectChainlinkConfig(config) {
+  const apiKey = process.env.STREAMS_API_KEY || process.env.CHAINLINK_STREAMS_API_KEY;
+  const apiSecret = process.env.STREAMS_API_SECRET || process.env.CHAINLINK_STREAMS_API_SECRET;
+  const feedId = process.env.CHAINLINK_FEED_ID || config.chainlink.feedId;
+  return Boolean(apiKey && apiSecret && feedId && !String(feedId).includes('PUT_'));
+}
+
 function safeJsonParse(data) {
   try {
     return JSON.parse(String(data));
@@ -244,6 +257,7 @@ function main() {
   const cexWriter = makeWriter(path.join(runDir, 'cex_ticks.ndjson'));
   const compositeWriter = makeWriter(path.join(runDir, 'cex_composite.ndjson'));
   const chainlinkWriter = makeWriter(path.join(runDir, 'chainlink_reports.ndjson'));
+  const polymarketRtdsWriter = makeWriter(path.join(runDir, 'polymarket_rtds_prices.ndjson'));
   const statusWriter = makeWriter(path.join(runDir, 'status.ndjson'));
 
   const state = new Map();
@@ -392,6 +406,48 @@ function main() {
     }, (row) => statusWriter.write(row));
   }
 
+  if (config.polymarketRtds?.enabled) {
+    connectWs('polymarket_rtds', 'wss://ws-live-data.polymarket.com', (ws) => {
+      const subscriptions = [
+        {
+          topic: 'crypto_prices_chainlink',
+          type: '*',
+          filters: JSON.stringify({ symbol: config.polymarketRtds.chainlinkSymbol || 'btc/usd' }),
+        },
+        {
+          topic: 'crypto_prices',
+          type: '*',
+          filters: JSON.stringify({ symbol: config.polymarketRtds.binanceSymbol || 'btcusdt' }),
+        },
+      ];
+      ws.send(JSON.stringify({ action: 'subscribe', subscriptions }));
+    }, (data) => {
+      const recv = Date.now();
+      const msg = safeJsonParse(data);
+      if (!msg) {
+        statusWriter.write({ ts_recv: recv, source: 'polymarket_rtds', event: 'raw', data: String(data).slice(0, 300) });
+        return;
+      }
+      if (msg.status || msg.error || msg.message === 'PONG') {
+        statusWriter.write({ ts_recv: recv, source: 'polymarket_rtds', event: 'status', data: msg });
+        return;
+      }
+      const payload = msg.payload || msg.data || msg;
+      const topic = msg.topic || payload.topic;
+      const price = Number(payload.value ?? payload.price ?? payload.p ?? payload.c);
+      polymarketRtdsWriter.write({
+        ts_recv: recv,
+        source: 'polymarket_rtds',
+        topic,
+        type: msg.type || payload.type || null,
+        symbol: payload.symbol || payload.s || null,
+        timestamp: Number(payload.timestamp || payload.ts || payload.time || 0) || null,
+        price: Number.isFinite(price) ? price : null,
+        raw: msg,
+      });
+    }, (row) => statusWriter.write(row));
+  }
+
   const compositeTimer = setInterval(() => {
     const recv = Date.now();
     const rows = [...state.entries()]
@@ -413,30 +469,41 @@ function main() {
     });
   }, Number(config.cex.compositeMs || 100));
 
-  async function pollChainlink() {
-    try {
-      const row = await fetchChainlinkLatest(config);
-      const key = `${row.feedID}:${row.observationsTimestamp}:${row.decoded?.priceRaw || ''}`;
-      if (key !== lastChainlinkKey) {
-        lastChainlinkKey = key;
-        chainlinkWriter.write(row);
+  let chainlinkTimer = null;
+  if (hasDirectChainlinkConfig(config)) {
+    async function pollChainlink() {
+      try {
+        const row = await fetchChainlinkLatest(config);
+        const key = `${row.feedID}:${row.observationsTimestamp}:${row.decoded?.priceRaw || ''}`;
+        if (key !== lastChainlinkKey) {
+          lastChainlinkKey = key;
+          chainlinkWriter.write(row);
+        }
+      } catch (err) {
+        statusWriter.write({ ts_recv: Date.now(), source: 'chainlink', event: 'error', message: err.message });
       }
-    } catch (err) {
-      statusWriter.write({ ts_recv: Date.now(), source: 'chainlink', event: 'error', message: err.message });
     }
+    chainlinkTimer = setInterval(pollChainlink, Number(config.chainlink.pollMs || 250));
+    pollChainlink();
+  } else {
+    statusWriter.write({
+      ts_recv: Date.now(),
+      source: 'chainlink',
+      event: 'disabled',
+      message: 'missing direct Chainlink credentials/feedId; using Polymarket RTDS fallback if enabled',
+    });
   }
-  const chainlinkTimer = setInterval(pollChainlink, Number(config.chainlink.pollMs || 250));
-  pollChainlink();
 
   console.log(`writing lead-lag data to ${runDir}`);
   console.log('stop with Ctrl-C');
 
   function shutdown() {
     clearInterval(compositeTimer);
-    clearInterval(chainlinkTimer);
+    if (chainlinkTimer) clearInterval(chainlinkTimer);
     cexWriter.close();
     compositeWriter.close();
     chainlinkWriter.close();
+    polymarketRtdsWriter.close();
     statusWriter.close();
     process.exit(0);
   }
@@ -447,4 +514,3 @@ function main() {
 if (require.main === module) {
   main();
 }
-

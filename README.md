@@ -10,6 +10,7 @@ The initial goal is to measure whether exchange prices from Binance, Gate.io, an
 - Builds a 100ms composite CEX mid-price stream.
 - Fetches Chainlink Data Streams latest reports using HMAC authentication.
 - Decodes Chainlink Crypto v3 report fields: `price`, `bid`, `ask`, `observationsTimestamp`, and `validFromTimestamp`.
+- Falls back to Polymarket RTDS `crypto_prices_chainlink` when direct Chainlink credentials are not available.
 - Computes simple lead-lag statistics between Chainlink reports and CEX composite prices.
 
 ## Requirements
@@ -21,6 +22,7 @@ The initial goal is to measure whether exchange prices from Binance, Gate.io, an
   - `CHAINLINK_FEED_ID`
 
 Exchange websocket data is public and does not require exchange accounts.
+Polymarket RTDS crypto price data is public and does not require Polymarket credentials.
 
 ## Setup
 
@@ -55,6 +57,7 @@ Main outputs:
 cex_ticks.ndjson          Raw exchange book ticker and trade events
 cex_composite.ndjson      100ms composite CEX mid-price snapshots
 chainlink_reports.ndjson  Chainlink report data and decoded v3 price fields
+polymarket_rtds_prices.ndjson Polymarket RTDS crypto price fallback data
 status.ndjson             Connection status and errors
 ```
 

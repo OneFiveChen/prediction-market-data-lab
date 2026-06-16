@@ -5,6 +5,11 @@
     "restUrl": "https://api.dataengine.chain.link",
     "pollMs": 250
   },
+  "polymarketRtds": {
+    "enabled": true,
+    "chainlinkSymbol": "btc/usd",
+    "binanceSymbol": "btcusdt"
+  },
   "cex": {
     "compositeMs": 100,
     "binance": true,

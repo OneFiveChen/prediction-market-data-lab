@@ -2,6 +2,16 @@
 
 目的：比较 Chainlink BTC/USD Data Streams report price 和 Binance/Gate.io/Bitget tick 价格的前后关系。
 
+如果暂时没有 Chainlink Data Streams API 凭证，采集器也会订阅 Polymarket RTDS：
+
+```text
+wss://ws-live-data.polymarket.com
+topic: crypto_prices_chainlink
+symbol: btc/usd
+```
+
+Polymarket RTDS 是 no-auth public websocket。它不是 Chainlink 直接 API，但足够先研究“Polymarket 可见的 Chainlink price”与交易所 tick/composite 的前后关系。
+
 ## 1. 需要的 Chainlink 凭证
 
 Chainlink Data Streams API 需要：
@@ -70,6 +80,7 @@ data/chainlink-cex-leadlag/run-YYYY-MM-DD...
 cex_ticks.ndjson          原始交易所 tick/trade
 cex_composite.ndjson      每 100ms 的三交易所 median/mean mid
 chainlink_reports.ndjson  Chainlink report + 解码后的 price/bid/ask
+polymarket_rtds_prices.ndjson Polymarket RTDS crypto_prices_chainlink / crypto_prices
 status.ndjson             连接状态和错误
 ```
 
@@ -102,5 +113,6 @@ best lag > 0:
 ## 5. 当前限制
 
 - 如果没有 `STREAMS_API_KEY`、`STREAMS_API_SECRET`、`CHAINLINK_FEED_ID`，只能采集交易所数据。
+- 如果没有 Chainlink 直接凭证，分析器会自动尝试使用 Polymarket RTDS `crypto_prices_chainlink`。
 - `observationsTimestamp` 是秒级字段；分析器当前默认用本机收到 Chainlink report 的毫秒时间做 lead-lag。
 - 后续可以补 Chainlink WebSocket 版，减少 REST polling 的重复和延迟。

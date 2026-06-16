@@ -136,6 +136,7 @@ async function main() {
     const price = Number(row.decoded?.price);
     if (!Number.isFinite(price)) return;
     chainlink.push({
+      source: 'chainlink_direct',
       recvTs: Number(row.ts_recv),
       obsTs: Number(row.observationsTimestamp || row.decoded?.observationsTimestamp) * 1000,
       price,
@@ -143,6 +144,22 @@ async function main() {
       ask: Number(row.decoded?.ask),
     });
   });
+  if (!chainlink.length) {
+    await readNdjson(path.join(runDir, 'polymarket_rtds_prices.ndjson'), (row) => {
+      if (row.topic !== 'crypto_prices_chainlink') return;
+      const price = Number(row.price);
+      if (!Number.isFinite(price)) return;
+      const eventTs = Number(row.timestamp);
+      chainlink.push({
+        source: 'polymarket_rtds_chainlink',
+        recvTs: Number(row.ts_recv),
+        obsTs: Number.isFinite(eventTs) && eventTs > 0 ? (eventTs > 1e12 ? eventTs : eventTs * 1000) : null,
+        price,
+        bid: null,
+        ask: null,
+      });
+    });
+  }
   await readNdjson(path.join(runDir, 'cex_composite.ndjson'), (row) => {
     const price = Number(row.medianMid || row.meanMid);
     if (!Number.isFinite(price)) return;
@@ -171,6 +188,7 @@ async function main() {
 
   const summary = {
     runDir: path.resolve(runDir),
+    chainlinkSeriesSource: chainlink[0]?.source || null,
     settings: { minLag, maxLag, step, nearestToleranceMs },
     counts: { chainlink: chainlink.length, composite: composite.length },
     timeRange: {
@@ -196,4 +214,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-
